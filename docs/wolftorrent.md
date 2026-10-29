@@ -25,7 +25,9 @@ pinning and rollback. `latest` points to the most recently built image.
 The image's built-in `AUTO_UPDATE` is disabled: self-updating would overwrite
 the custom assembly. Update by pulling a new tested image. For an existing stack,
 keep all volumes, ports, environment and networks, change the image and explicitly
-set `AUTO_UPDATE=false` if the stack previously enabled it. Back up `/config`
+set `AUTO_UPDATE=false` if the stack previously enabled it, and enable
+**Disable auto update** in Jackett itself (or pass `--NoUpdates`). Both update
+mechanisms must remain disabled. Back up `/config`
 before deployment. To roll back, restore the previous image reference.
 
 Byparr is deployed separately, for example `ghcr.io/thephaseless/byparr@sha256:874f719518f617d03a60e03411fc5d090647e1a877041e81f8dc965927c7deb6`,
