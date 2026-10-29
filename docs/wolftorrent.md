@@ -28,7 +28,8 @@ keep all volumes, ports, environment and networks, change the image and explicit
 set `AUTO_UPDATE=false` if the stack previously enabled it. Back up `/config`
 before deployment. To roll back, restore the previous image reference.
 
-Byparr is deployed separately, for example `ghcr.io/thephaseless/byparr:v3.0.4`,
+Byparr is deployed separately, for example `ghcr.io/thephaseless/byparr@sha256:874f719518f617d03a60e03411fc5d090647e1a877041e81f8dc965927c7deb6`,
+which is the published image of v3.0.4 (verified from its revision label),
 reachable only on the Docker network. Do not publish its port unless required.
 The official LinuxServer and Jackett licenses and notices remain applicable.
 
