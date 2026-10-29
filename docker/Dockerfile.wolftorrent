@@ -1,0 +1,17 @@
+# syntax=docker/dockerfile:1
+ARG JACKETT_VERSION
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+ARG JACKETT_VERSION
+WORKDIR /src
+COPY . .
+RUN dotnet build src/Jackett.Common/Jackett.Common.csproj \
+    --configuration Release --framework net9.0 \
+    -p:TargetFrameworks=net9.0 -p:Version=${JACKETT_VERSION} --output /out
+
+FROM lscr.io/linuxserver/jackett:version-v${JACKETT_VERSION}
+ARG JACKETT_VERSION
+COPY --from=build /out/Jackett.Common.dll /app/Jackett/Jackett.Common.dll
+ENV AUTO_UPDATE=false
+LABEL org.opencontainers.image.source="https://github.com/AnubisReal/Jackett" \
+      org.opencontainers.image.description="Official LinuxServer Jackett with the WolfTorrent indexer" \
+      org.opencontainers.image.version="${JACKETT_VERSION}-wolftorrent"

@@ -1,0 +1,103 @@
+name: WolfTorrent image
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Official Jackett tag, or latest'
+        default: latest
+        required: true
+  push:
+    branches: [master]
+    paths:
+      - src/Jackett.Common/Indexers/Definitions/Wolfmax4K.cs
+      - src/Jackett.Test/Common/Utils/WolfmaxDownloadTests.cs
+      - docker/Dockerfile.wolftorrent
+      - .github/workflows/wolftorrent-image.yml
+  schedule:
+    - cron: '20 7 * * *'
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: wolftorrent-image
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.repository == 'AnubisReal/Jackett'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: fork
+      - name: Select official release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED: ${{ inputs.version || 'latest' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$REQUESTED"
+          if [[ "$tag" == latest ]]; then
+            tag=$(gh api repos/Jackett/Jackett/releases/latest --jq .tag_name)
+          fi
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: Jackett/Jackett
+          ref: ${{ steps.release.outputs.tag }}
+          path: upstream
+      - name: Add only the indexer and its tests
+        run: |
+          cp fork/src/Jackett.Common/Indexers/Definitions/Wolfmax4K.cs upstream/src/Jackett.Common/Indexers/Definitions/
+          cp fork/src/Jackett.Test/Common/Utils/WolfmaxDownloadTests.cs upstream/src/Jackett.Test/Common/Utils/
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Test indexer against the official release
+        working-directory: upstream
+        run: dotnet test src/Jackett.Test/Jackett.Test.csproj --framework net9.0 --configuration Release -p:TargetFrameworks=net9.0 --filter FullyQualifiedName~WolfmaxDownloadTests --nologo
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: upstream
+          file: fork/docker/Dockerfile.wolftorrent
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: JACKETT_VERSION=${{ steps.release.outputs.version }}
+          tags: |
+            ghcr.io/anubisreal/jackett-wolftorrent:${{ steps.release.outputs.tag }}
+            ghcr.io/anubisreal/jackett-wolftorrent:${{ steps.release.outputs.tag }}-${{ github.sha }}
+            ghcr.io/anubisreal/jackett-wolftorrent:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test published image
+        env:
+          IMAGE: ghcr.io/anubisreal/jackett-wolftorrent@${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker run -d --name jackett-smoke -p 127.0.0.1:19117:9117 "$IMAGE"
+          trap 'docker logs jackett-smoke; docker rm -f jackett-smoke' EXIT
+          for attempt in $(seq 1 60); do
+            if curl -fsS -c /tmp/jackett-cookies -b /tmp/jackett-cookies http://127.0.0.1:19117/UI/Dashboard >/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+          docker exec jackett-smoke sh -c 'test -f /app/Jackett/Jackett.Common.dll'
+          docker logs jackett-smoke 2>&1 | grep 'Loaded.*Native indexers'
+          curl -fsS -c /tmp/jackett-cookies -b /tmp/jackett-cookies http://127.0.0.1:19117/UI/Dashboard >/dev/null
+      - name: Image summary
+        run: |
+          echo 'Official release: ${{ steps.release.outputs.tag }}' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Image: ghcr.io/anubisreal/jackett-wolftorrent@${{ steps.image.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"
